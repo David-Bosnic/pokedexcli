@@ -2,8 +2,11 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"strings"
 )
@@ -11,7 +14,22 @@ import (
 type cliCommand struct {
 	name        string
 	description string
-	callback    func() error
+	callback    func(config *Config) error
+}
+
+type Config struct {
+	Next string
+	Prev string
+}
+
+type PokeMap struct {
+	Count    int    `json:"count"`
+	Next     string `json:"next"`
+	Previous string `json:"previous"`
+	Results  []struct {
+		Name string `json:"name"`
+		URL  string `json:"url"`
+	} `json:"results"`
 }
 
 var commands map[string]cliCommand
@@ -28,9 +46,23 @@ func init() {
 			description: "Show commands",
 			callback:    commandHelp,
 		},
+		"map": {
+			name:        "map",
+			description: "Displays the next 20 locations in the Pokemon world",
+			callback:    commandMap,
+		},
+		"mapb": {
+			name:        "map",
+			description: "Displays the previous 20 locations in the Pokemon world",
+			callback:    commandMapB,
+		},
 	}
 }
 func main() {
+	currentConfig := Config{
+		Next: "",
+		Prev: "",
+	}
 	scanner := bufio.NewScanner(os.Stdin)
 	fmt.Println("Welcome to the Pokedex!")
 	for {
@@ -44,7 +76,7 @@ func main() {
 		cleanText := cleanInput(scanner.Text())
 		_, ok := commands[cleanText[0]]
 		if ok {
-			commands[cleanText[0]].callback()
+			commands[cleanText[0]].callback(&currentConfig)
 		} else {
 			fmt.Println("Unknown Command")
 		}
@@ -57,14 +89,77 @@ func cleanInput(text string) []string {
 	return stringers
 }
 
-func commandExit() error {
+func commandExit(config *Config) error {
 	fmt.Println("Closing the Pokedex... Goodbye!")
 	os.Exit(0)
 	return nil
 }
-func commandHelp() error {
+func commandHelp(config *Config) error {
 	for _, val := range commands {
 		fmt.Printf("%s: %s\n", val.name, val.description)
 	}
+	return nil
+}
+func commandMap(config *Config) error {
+	var url string
+	if config.Next != "" {
+		url = config.Next
+	} else {
+		url = "https://pokeapi.co/api/v2/location-area/"
+	}
+	res, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	body, err := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode > 200 {
+		log.Fatalf("Response failed with status code: %d and\nbody: %s\n", res.StatusCode, body)
+	}
+	if err != nil {
+		return err
+	}
+	pokeMap := PokeMap{}
+	err = json.Unmarshal(body, &pokeMap)
+	if err != nil {
+		return err
+	}
+	for _, val := range pokeMap.Results {
+		fmt.Println(val.Name)
+	}
+	config.Next = pokeMap.Next
+	config.Prev = pokeMap.Previous
+	return nil
+}
+
+func commandMapB(config *Config) error {
+	var url string
+	if config.Prev != "" {
+		url = config.Prev
+	} else {
+		url = "https://pokeapi.co/api/v2/location-area/"
+	}
+	res, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	body, err := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode > 200 {
+		log.Fatalf("Response failed with status code: %d and\nbody: %s\n", res.StatusCode, body)
+	}
+	if err != nil {
+		return err
+	}
+	pokeMap := PokeMap{}
+	err = json.Unmarshal(body, &pokeMap)
+	if err != nil {
+		return err
+	}
+	for _, val := range pokeMap.Results {
+		fmt.Println(val.Name)
+	}
+	config.Next = pokeMap.Next
+	config.Prev = pokeMap.Previous
 	return nil
 }
