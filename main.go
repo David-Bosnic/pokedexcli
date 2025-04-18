@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/David-Bosnic/pokedexcli/internal"
 )
 
 type cliCommand struct {
@@ -33,8 +35,10 @@ type PokeMap struct {
 }
 
 var commands map[string]cliCommand
+var pokeCache *internal.Cache
 
 func init() {
+	pokeCache = internal.NewCache(5)
 	commands = map[string]cliCommand{
 		"exit": {
 			name:        "exit",
@@ -52,7 +56,7 @@ func init() {
 			callback:    commandMap,
 		},
 		"mapb": {
-			name:        "map",
+			name:        "mapb",
 			description: "Displays the previous 20 locations in the Pokemon world",
 			callback:    commandMapB,
 		},
@@ -74,11 +78,14 @@ func main() {
 			log.Fatal(err)
 		}
 		cleanText := cleanInput(scanner.Text())
-		_, ok := commands[cleanText[0]]
-		if ok {
-			commands[cleanText[0]].callback(&currentConfig)
-		} else {
-			fmt.Println("Unknown Command")
+		if len(cleanText) != 0 {
+			_, ok := commands[cleanText[0]]
+			if ok {
+				commands[cleanText[0]].callback(&currentConfig)
+			} else {
+				fmt.Println("Unknown Command")
+			}
+
 		}
 	}
 }
@@ -95,6 +102,7 @@ func commandExit(config *Config) error {
 	return nil
 }
 func commandHelp(config *Config) error {
+	// TODO: Make the list ordered rather than rng
 	for _, val := range commands {
 		fmt.Printf("%s: %s\n", val.name, val.description)
 	}
@@ -102,27 +110,37 @@ func commandHelp(config *Config) error {
 }
 func commandMap(config *Config) error {
 	var url string
+	var pokeMap PokeMap
 	if config.Next != "" {
 		url = config.Next
 	} else {
 		url = "https://pokeapi.co/api/v2/location-area/"
 	}
-	res, err := http.Get(url)
-	if err != nil {
-		return err
-	}
-	body, err := io.ReadAll(res.Body)
-	res.Body.Close()
-	if res.StatusCode > 200 {
-		log.Fatalf("Response failed with status code: %d and\nbody: %s\n", res.StatusCode, body)
-	}
-	if err != nil {
-		return err
-	}
-	pokeMap := PokeMap{}
-	err = json.Unmarshal(body, &pokeMap)
-	if err != nil {
-		return err
+	val, ok := pokeCache.Get(url)
+	if !ok {
+		res, err := http.Get(url)
+		if err != nil {
+			return err
+		}
+		body, err := io.ReadAll(res.Body)
+		res.Body.Close()
+		if res.StatusCode > 200 {
+			log.Fatalf("Response failed with status code: %d and\nbody: %s\n", res.StatusCode, body)
+		}
+		if err != nil {
+			return err
+		}
+		pokeMap = PokeMap{}
+		pokeCache.Add(url, body)
+		err = json.Unmarshal(body, &pokeMap)
+		if err != nil {
+			return err
+		}
+	} else {
+		err := json.Unmarshal(val, &pokeMap)
+		if err != nil {
+			return err
+		}
 	}
 	for _, val := range pokeMap.Results {
 		fmt.Println(val.Name)
@@ -134,27 +152,37 @@ func commandMap(config *Config) error {
 
 func commandMapB(config *Config) error {
 	var url string
+	var pokeMap PokeMap
 	if config.Prev != "" {
 		url = config.Prev
 	} else {
 		url = "https://pokeapi.co/api/v2/location-area/"
 	}
-	res, err := http.Get(url)
-	if err != nil {
-		return err
-	}
-	body, err := io.ReadAll(res.Body)
-	res.Body.Close()
-	if res.StatusCode > 200 {
-		log.Fatalf("Response failed with status code: %d and\nbody: %s\n", res.StatusCode, body)
-	}
-	if err != nil {
-		return err
-	}
-	pokeMap := PokeMap{}
-	err = json.Unmarshal(body, &pokeMap)
-	if err != nil {
-		return err
+	val, ok := pokeCache.Get(url)
+	if !ok {
+		res, err := http.Get(url)
+		if err != nil {
+			return err
+		}
+		body, err := io.ReadAll(res.Body)
+		res.Body.Close()
+		if res.StatusCode > 200 {
+			log.Fatalf("Response failed with status code: %d and\nbody: %s\n", res.StatusCode, body)
+		}
+		if err != nil {
+			return err
+		}
+		pokeMap = PokeMap{}
+		pokeCache.Add(url, body)
+		err = json.Unmarshal(body, &pokeMap)
+		if err != nil {
+			return err
+		}
+	} else {
+		err := json.Unmarshal(val, &pokeMap)
+		if err != nil {
+			return err
+		}
 	}
 	for _, val := range pokeMap.Results {
 		fmt.Println(val.Name)
