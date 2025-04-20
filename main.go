@@ -4,14 +4,13 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"github.com/David-Bosnic/pokedexcli/internal"
 	"io"
 	"log"
 	"math/rand"
 	"net/http"
 	"os"
 	"strings"
-
-	"github.com/David-Bosnic/pokedexcli/internal"
 )
 
 type cliCommand struct {
@@ -311,7 +310,7 @@ type Pokemon struct {
 }
 
 type Pokedex struct {
-	capturedPokemon []Pokemon
+	capturedPokemon map[string]Pokemon
 }
 
 type PokeMap struct {
@@ -382,6 +381,7 @@ var pokeCache *internal.Cache
 var pokedex Pokedex
 
 func init() {
+	pokedex.capturedPokemon = make(map[string]Pokemon)
 	pokeCache = internal.NewCache(5)
 	commands = map[string]cliCommand{
 		"exit": {
@@ -413,6 +413,16 @@ func init() {
 			name:        "catch",
 			description: "attempt to catch a Pokemon",
 			callback:    commandCatch,
+		},
+		"inspect": {
+			name:        "inspect",
+			description: "inspect a Pokemon in your Pokedex",
+			callback:    commandInspect,
+		},
+		"pokedex": {
+			name:        "pokedex",
+			description: "show a list of all your pokemon that you caught",
+			callback:    commandPokedex,
 		},
 	}
 }
@@ -592,7 +602,7 @@ func commandCatch(config *Config) error {
 		fmt.Println("You can't attempt to catch nothing you silly")
 		return nil
 	}
-	fmt.Println("Attempting to catch:", config.Param)
+	fmt.Printf("Throwing a Pokeball at %v...\n", config.Param)
 	url := "https://pokeapi.co/api/v2/pokemon/" + config.Param
 	val, ok := pokeCache.Get(url)
 	if !ok {
@@ -623,10 +633,41 @@ func commandCatch(config *Config) error {
 	}
 	caught := catchAttempt(pokemon.BaseExperience)
 	if caught {
-		pokedex.capturedPokemon = append(pokedex.capturedPokemon, pokemon)
+		pokedex.capturedPokemon[pokemon.Name] = pokemon
 		fmt.Println(pokemon.Name, "was caught!")
 	} else {
 		fmt.Println(pokemon.Name, "escaped!")
+	}
+	return nil
+}
+func commandInspect(config *Config) error {
+	val, ok := pokedex.capturedPokemon[config.Param]
+	if ok {
+		fmt.Println("Name:", val.Name)
+		fmt.Println("Height:", val.Height)
+		fmt.Println("Weight:", val.Weight)
+		fmt.Println("Stats:")
+		for _, stats := range val.Stats {
+			fmt.Printf(" - %s: %d\n", stats.Stat.Name, stats.BaseStat)
+		}
+		fmt.Println("Type:")
+		for _, typeVal := range val.Types {
+			fmt.Printf(" - %s\n", typeVal.Type.Name)
+		}
+	} else {
+		fmt.Printf("You have not caught a %v or invalid name\n", config.Param)
+	}
+	return nil
+}
+func commandPokedex(config *Config) error {
+	if len(pokedex.capturedPokemon) == 0 {
+		fmt.Println("Go catch some Pokemon! You have none!")
+		return nil
+	} else {
+		fmt.Println("Here is you list of Pokemon:")
+		for name := range pokedex.capturedPokemon {
+			fmt.Printf(" - %s\n", name)
+		}
 	}
 	return nil
 }
